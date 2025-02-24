@@ -7,7 +7,7 @@
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
     textarea { width: 100%; max-width: 600px; }
-    #plot { max-width: 600px; border: 1px solid #ccc; margin-top: 20px; }
+    #plot { max-width: 1000px; border: 1px solid #ccc; margin-top: 20px; }
     #output, #roll-output { color: red; margin-top: 10px; }
     .chart-size { margin: 10px 0; }
     .chart-size label { margin-right: 10px; }
@@ -27,9 +27,9 @@ if result < 7:
   <br>
   <div class="chart-size">
     <label for="chart-width">Chart Width (inches):</label>
-    <input type="number" id="chart-width" value="8" step="0.1">
+    <input type="number" id="chart-width" value="12" step="1.0">
     <label for="chart-height">Chart Height (inches):</label>
-    <input type="number" id="chart-height" value="6" step="0.1">
+    <input type="number" id="chart-height" value="8" step="1.0">
   </div>
   <button id="run-button">Generate Chart</button>
   <button id="roll-button">Roll Dice</button>
@@ -178,7 +178,7 @@ def preprocess_code(code):
     return re.sub(r'(\\b\\d+d\\d+\\b)', r'gf_dice("\\1")', code)
 
 def run_dice_code(user_code, width=8, height=6):
-    DECIMAL_POINTS = 2
+    DECIMAL_POINTS = 1
     MIN_LABEL_PERCENT = 1.0
 
     processed_code = preprocess_code(user_code)
