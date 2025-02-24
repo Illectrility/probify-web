@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Dice Code Plotter</title>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.23.3/full/pyodide.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    textarea { width: 100%; max-width: 600px; }
+    #plot { max-width: 600px; border: 1px solid #ccc; margin-top: 20px; }
+    #output { color: red; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Dice Code Plotter</h1>
+  <p>Enter your dice code snippet below:</p>
+  <textarea id="dice-code" rows="10">
+# Example:
+result = 1d6 + 2d6
+if result < 7:
+    result = 1d4
+  </textarea>
+  <br>
+  <button id="run-button">Run Code</button>
+  <div id="output"></div>
+  <h2>Resulting Distribution:</h2>
+  <img id="plot" alt="Plot will appear here" />
+  
+  <script>
+    async function main() {
+      const pyodide = await loadPyodide();
+      await pyodide.loadPackage(['matplotlib', 'numpy']);
+      // Define our Python code to process and run the dice snippet.
+      pyodide.runPython(`
+import ast
+import re
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import io
+import base64
+
+def gf_add(dist1, dist2):
+    new_dist = {}
+    for a, pa in dist1.items():
+        for b, pb in dist2.items():
+            new_dist[a + b] = new_dist.get(a + b, 0) + pa * pb
+    return new_dist
+
+def gf_repeat(dist, times):
+    result = {0: 1}
+    for _ in range(times):
+        result = gf_add(result, dist)
+    return result
+
+def gf_dice(notation):
+    m = re.fullmatch(r'(\\d+)d(\\d+)', notation)
+    if not m:
+        raise ValueError("Invalid dice notation: " + notation)
+    N = int(m.group(1))
+    M = int(m.group(2))
+    one_die = {i: 1 / M for i in range(1, M + 1)}
+    return GF(gf_repeat(one_die, N))
+
+def gf_conditional(gf_obj, condition, replacement):
+    prob_replace = sum(prob for outcome, prob in gf_obj.dist.items() if condition(outcome))
+    new_dist = {outcome: prob for outcome, prob in gf_obj.dist.items() if not condition(outcome)}
+    for outcome, prob in replacement.dist.items():
+        new_dist[outcome] = new_dist.get(outcome, 0) + prob_replace * prob
+    return GF(new_dist)
+
+class GF:
+    def __init__(self, dist):
+        self.dist = dist
+
+    def __add__(self, other):
+        if isinstance(other, GF):
+            return GF(gf_add(self.dist, other.dist))
+        elif isinstance(other, int):
+            return GF({k + other: v for k, v in self.dist.items()})
+        else:
+            return NotImplemented
+
+    def __radd__(self, other):
+        return self + other
+
+    def __mul__(self, other):
+        if isinstance(other, int):
+            return GF(gf_repeat(self.dist, other))
+        return NotImplemented
+
+    def __rmul__(self, other):
+        return self * other
+
+    def __str__(self):
+        return str(self.dist)
+    __repr__ = __str__
+
+class DiceTransformer(ast.NodeTransformer):
+    def visit_If(self, node):
+        if (isinstance(node.test, ast.Compare) and
+            isinstance(node.test.left, ast.Name) and
+            len(node.test.ops) == 1 and
+            isinstance(node.test.ops[0], (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)) and
+            len(node.test.comparators) == 1 and
+            isinstance(node.test.comparators[0], ast.Constant)):
+            
+            var_name = node.test.left.id
+            if (len(node.body) == 1 and isinstance(node.body[0], ast.Assign) and
+                len(node.body[0].targets) == 1 and isinstance(node.body[0].targets[0], ast.Name) and
+                node.body[0].targets[0].id == var_name):
+                
+                assign_node = node.body[0]
+                new_compare = ast.Lambda(
+                    args=ast.arguments(
+                        args=[ast.arg(arg="outcome")],
+                        posonlyargs=[], defaults=[]),
+                    body=ast.Compare(
+                        left=ast.Name(id="outcome", ctx=ast.Load()),
+                        ops=node.test.ops,
+                        comparators=node.test.comparators
+                    )
+                )
+                new_call = ast.Call(
+                    func=ast.Name(id="gf_conditional", ctx=ast.Load()),
+                    args=[ast.Name(id=var_name, ctx=ast.Load()), new_compare, assign_node.value],
+                    keywords=[]
+                )
+                return ast.Assign(targets=[ast.Name(id=var_name, ctx=ast.Store())], value=new_call)
+        return self.generic_visit(node)
+
+    def visit_For(self, node):
+        if (isinstance(node.target, ast.Name) and
+            isinstance(node.iter, ast.Call) and
+            isinstance(node.iter.func, ast.Name) and
+            node.iter.func.id == "range" and
+            len(node.iter.args) == 1 and
+            isinstance(node.iter.args[0], ast.Constant)):
+            
+            loop_count = node.iter.args[0].value
+
+            if (len(node.body) == 1 and isinstance(node.body[0], ast.AugAssign) and
+                isinstance(node.body[0].op, ast.Add) and
+                isinstance(node.body[0].target, ast.Name) and
+                isinstance(node.body[0].value, ast.Call)):
+                
+                augassign = node.body[0]
+                new_call = ast.BinOp(left=augassign.value, op=ast.Mult(), right=ast.Constant(value=loop_count))
+                return ast.Assign(
+                    targets=[ast.Name(id=augassign.target.id, ctx=ast.Store())],
+                    value=ast.BinOp(
+                        left=ast.Name(id=augassign.target.id, ctx=ast.Load()),
+                        op=ast.Add(),
+                        right=new_call
+                    )
+                )
+        return self.generic_visit(node)
+
+def preprocess_code(code):
+    return re.sub(r'(\\b\\d+d\\d+\\b)', r'gf_dice("\\1")', code)
+
+def run_dice_code(user_code):
+    DECIMAL_POINTS = 2
+    MIN_LABEL_PERCENT = 1.0
+
+    processed_code = preprocess_code(user_code)
+    tree = ast.parse(processed_code)
+    tree = DiceTransformer().visit(tree)
+    ast.fix_missing_locations(tree)
+
+    env = {"gf_dice": gf_dice, "gf_conditional": gf_conditional, "GF": GF}
+    exec(compile(tree, "<ast>", "exec"), env)
+
+    result = env["result"]
+    outcomes, probabilities = zip(*sorted(result.dist.items()))
+
+    plt.figure(figsize=(8, 6))
+    bars = plt.bar(outcomes, [p * 100 for p in probabilities],
+                   color="skyblue", edgecolor="black")
+    for bar, p in zip(bars, probabilities):
+        percent_value = p * 100
+        if percent_value >= MIN_LABEL_PERCENT:
+            height = bar.get_height()
+            plt.text(
+                bar.get_x() + bar.get_width() / 2.,
+                height,
+                f'{percent_value:.{DECIMAL_POINTS}f}%',
+                ha='center',
+                va='bottom'
+            )
+    plt.xlabel("Outcome")
+    plt.ylabel("Probability (%)")
+    plt.title("Distribution for result")
+    plt.xticks(outcomes)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    img_bytes = buf.getvalue()
+    data_uri = "data:image/png;base64," + base64.b64encode(img_bytes).decode("utf-8")
+    plt.close()
+    return data_uri
+      `);
+      
+      document.getElementById("run-button").onclick = async () => {
+        const userCode = document.getElementById("dice-code").value;
+        try {
+          const dataUri = await pyodide.runPythonAsync(`run_dice_code(${JSON.stringify(userCode)})`);
+          document.getElementById("plot").src = dataUri;
+          document.getElementById("output").textContent = "";
+        } catch (err) {
+          document.getElementById("output").textContent = err;
+        }
+      };
+    }
+    main();
+  </script>
+</body>
+</html>
