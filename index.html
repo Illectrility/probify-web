@@ -2,37 +2,38 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Probify Web</title>
+  <title>Dice Code Plotter & Roller</title>
   <script src="https://cdn.jsdelivr.net/pyodide/v0.23.3/full/pyodide.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
     textarea { width: 100%; max-width: 600px; }
-    #plot { max-width: 1000px; border: 1px solid #ccc; margin-top: 20px; }
-    #output { color: red; margin-top: 10px; }
+    #plot { max-width: 600px; border: 1px solid #ccc; margin-top: 20px; }
+    #output, #roll-output { color: red; margin-top: 10px; }
     .chart-size { margin: 10px 0; }
     .chart-size label { margin-right: 10px; }
+    button { margin-right: 10px; }
   </style>
 </head>
 <body>
-  <h1>Probify</h1>
-  <a href="https://github.com/Illectrility/probify?tab=readme-ov-file#syntax">Syntax Guide</a>
-  <p>It may need a second to load</p>
+  <h1>Dice Code Plotter & Roller</h1>
   <p>Enter your dice code snippet below:</p>
   <textarea id="dice-code" rows="10">
-# Example:
+# Example dice code:
 result = 1d6 + 2d6
 if result < 7:
     result = 1d4
   </textarea>
   <br>
   <div class="chart-size">
-    <label for="chart-width">Chart Width:</label>
-    <input type="number" id="chart-width" value="12" step="1.0">
-    <label for="chart-height">Chart Height:</label>
-    <input type="number" id="chart-height" value="8" step="1.0">
+    <label for="chart-width">Chart Width (inches):</label>
+    <input type="number" id="chart-width" value="8" step="0.1">
+    <label for="chart-height">Chart Height (inches):</label>
+    <input type="number" id="chart-height" value="6" step="0.1">
   </div>
-  <button id="run-button">Run Code</button>
+  <button id="run-button">Generate Chart</button>
+  <button id="roll-button">Roll Dice</button>
   <div id="output"></div>
+  <div id="roll-output"></div>
   <h2>Resulting Distribution:</h2>
   <img id="plot" alt="Plot will appear here" />
   
@@ -40,7 +41,7 @@ if result < 7:
     async function main() {
       const pyodide = await loadPyodide();
       await pyodide.loadPackage(['matplotlib', 'numpy']);
-      // Define our Python code to process and run the dice snippet.
+      // Define our Python code with both chart generation and roll simulation.
       pyodide.runPython(`
 import ast
 import re
@@ -80,7 +81,6 @@ def gf_conditional(gf_obj, condition, replacement):
     return GF(new_dist)
 
 class GF:
-    """A class representing a probability distribution."""
     def __init__(self, dist):
         self.dist = dist
 
@@ -93,28 +93,7 @@ class GF:
             return NotImplemented
 
     def __radd__(self, other):
-        if isinstance(other, int):
-            return GF({k + other: v for k, v in self.dist.items()})
-        return NotImplemented
-
-    def __sub__(self, other):
-        if isinstance(other, int):
-            # Subtracting an integer: shift each outcome by -other
-            return GF({k - other: v for k, v in self.dist.items()})
-        elif isinstance(other, GF):
-            # Subtracting two GF objects: compute distribution of (X - Y)
-            # This is done by reflecting other and convolving.
-            reflected = { -k: v for k, v in other.dist.items() }
-            return GF(gf_add(self.dist, reflected))
-        else:
-            return NotImplemented
-
-    def __rsub__(self, other):
-        # For expressions like: int - GF
-        if isinstance(other, int):
-            return GF({other - k: v for k, v in self.dist.items()})
-        else:
-            return NotImplemented
+        return self + other
 
     def __mul__(self, other):
         if isinstance(other, int):
@@ -122,15 +101,11 @@ class GF:
         return NotImplemented
 
     def __rmul__(self, other):
-        if isinstance(other, int):
-            return GF(gf_repeat(self.dist, other))
-        return NotImplemented
+        return self * other
 
     def __str__(self):
         return str(self.dist)
-
     __repr__ = __str__
-
 
 class DiceTransformer(ast.NodeTransformer):
     def visit_If(self, node):
@@ -202,7 +177,7 @@ def preprocess_code(code):
     return re.sub(r'(\\b\\d+d\\d+\\b)', r'gf_dice("\\1")', code)
 
 def run_dice_code(user_code, width=8, height=6):
-    DECIMAL_POINTS = 1
+    DECIMAL_POINTS = 2
     MIN_LABEL_PERCENT = 1.0
 
     processed_code = preprocess_code(user_code)
@@ -241,6 +216,19 @@ def run_dice_code(user_code, width=8, height=6):
     data_uri = "data:image/png;base64," + base64.b64encode(img_bytes).decode("utf-8")
     plt.close()
     return data_uri
+
+def run_dice_roll(user_code):
+    import random
+    processed_code = preprocess_code(user_code)
+    tree = ast.parse(processed_code)
+    tree = DiceTransformer().visit(tree)
+    ast.fix_missing_locations(tree)
+    env = {"gf_dice": gf_dice, "gf_conditional": gf_conditional, "GF": GF, "random": random}
+    exec(compile(tree, "<ast>", "exec"), env)
+    result = env["result"]
+    outcomes, probabilities = zip(*sorted(result.dist.items()))
+    outcome = random.choices(population=list(outcomes), weights=list(probabilities))[0]
+    return outcome
       `);
       
       document.getElementById("run-button").onclick = async () => {
@@ -254,6 +242,16 @@ def run_dice_code(user_code, width=8, height=6):
           document.getElementById("output").textContent = "";
         } catch (err) {
           document.getElementById("output").textContent = err;
+        }
+      };
+
+      document.getElementById("roll-button").onclick = async () => {
+        const userCode = document.getElementById("dice-code").value;
+        try {
+          const outcome = await pyodide.runPythonAsync(`run_dice_roll(${JSON.stringify(userCode)})`);
+          document.getElementById("roll-output").textContent = "Roll outcome: " + outcome;
+        } catch (err) {
+          document.getElementById("roll-output").textContent = err;
         }
       };
     }
