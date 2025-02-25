@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/default.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
   <style>
-    /* Loading overlay styles */
+    /* Loading overlay */
     #loading {
       position: fixed;
       top: 0;
@@ -38,7 +38,7 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
-    
+
     /* Reset defaults */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -88,13 +88,16 @@
       margin-bottom: 20px;
     }
     .markdown-frame pre { overflow-x: auto; }
+    /* Fixed text field width and only vertical resizing */
     textarea {
       width: 100%;
+      max-width: 100%;
       font-family: Consolas, Monaco, monospace;
       padding: 10px;
       border: 1px solid #ccc;
       border-radius: 4px;
       margin-bottom: 10px;
+      resize: vertical;
     }
     .chart-size { margin: 10px 0; }
     .chart-size label { margin-right: 10px; }
@@ -117,7 +120,7 @@
       overflow: hidden;
       background: #fff;
       text-align: center;
-      line-height: 400px; /* Vertically center if image is smaller */
+      line-height: 400px; /* vertically center if image is smaller */
     }
     #plot {
       max-width: 100%;
@@ -234,7 +237,7 @@ if result < 7:
       }
     });
     
-    // Insert syntax markdown.
+    // Insert the provided syntax as markdown.
     const syntaxMarkdown =
       "- Dice rolls use `XdY` notation (e.g., `1d6`, `2d8`)\n" +
       "- Use variables: `x = 1d6`\n" +
@@ -300,7 +303,7 @@ if result < 7:
     async function main() {
       const pyodide = await loadPyodide();
       await pyodide.loadPackage(['matplotlib', 'numpy']);
-      // Hide the loading overlay once everything is ready.
+      // Hide loading overlay once assets are loaded.
       document.getElementById("loading").style.display = "none";
       
       // Define Python code for chart generation and dice roll simulation.
@@ -419,6 +422,7 @@ def run_dice_roll(user_code):
     result = env["result"]; outcomes, probabilities = zip(*sorted(result.dist.items()))
     return random.choices(population=list(outcomes), weights=list(probabilities))[0]
       `);
+      
       document.getElementById("run-button").onclick = async () => {
          const userCode = document.getElementById("dice-code").value;
          const width = parseFloat(document.getElementById("chart-width").value);
@@ -432,6 +436,7 @@ def run_dice_roll(user_code):
             document.getElementById("output").textContent = err;
          }
       };
+      
       document.getElementById("roll-button").onclick = async () => {
          const userCode = document.getElementById("dice-code").value;
          try {
