@@ -2,261 +2,466 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Probify Web</title>
+  <!-- Pyodide for running Python code in the browser -->
   <script src="https://cdn.jsdelivr.net/pyodide/v0.23.3/full/pyodide.js"></script>
+  <!-- Marked and Highlight.js for rendering the syntax sidebar -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/default.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    textarea { width: 100%; max-width: 600px; }
-    #plot { max-width: 1000px; border: 1px solid #ccc; margin-top: 20px; }
-    #output, #roll-output { color: red; margin-top: 10px; }
+    /* Loading overlay styles */
+    #loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .spinner {
+      border: 8px solid #f3f3f3;
+      border-top: 8px solid #007acc;
+      border-radius: 50%;
+      width: 60px;
+      height: 60px;
+      animation: spin 1s linear infinite;
+      margin-bottom: 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    /* Reset defaults */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #fafafa;
+      color: #333;
+      line-height: 1.6;
+      padding: 10px;
+    }
+    .container {
+      display: flex;
+      flex-direction: row;
+      width: 100%;
+      max-width: 1200px;
+      margin: auto;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .sidebar {
+      width: 350px;
+      background: #f8f8f8;
+      border-right: 1px solid #ddd;
+      padding: 15px;
+      transition: all 0.3s ease;
+      overflow-y: auto;
+    }
+    .sidebar.collapsed { display: none; }
+    .main { flex: 1; padding: 20px; }
+    .toggle-button {
+      background: #007acc;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+    .toggle-button:hover { background: #005fa3; }
+    h1, h2 { color: #444; margin-bottom: 10px; }
+    .markdown-frame {
+      background: #f8f8f8;
+      border: 1px solid #ddd;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+    .markdown-frame pre { overflow-x: auto; }
+    textarea {
+      width: 100%;
+      font-family: Consolas, Monaco, monospace;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
     .chart-size { margin: 10px 0; }
     .chart-size label { margin-right: 10px; }
-    button { margin-right: 10px; }
+    button {
+      margin-right: 10px;
+      padding: 8px 16px;
+      border: none;
+      background-color: #007acc;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover { background-color: #005fa3; }
+    /* Fixed chart container for the PNG image */
+    #chart-container {
+      width: 100%;
+      height: 400px;
+      border: 1px solid #ccc;
+      margin-top: 20px;
+      overflow: hidden;
+      background: #fff;
+      text-align: center;
+      line-height: 400px; /* Vertically center if image is smaller */
+    }
+    #plot {
+      max-width: 100%;
+      max-height: 100%;
+      vertical-align: middle;
+      cursor: pointer;
+    }
+    #output, #roll-output { color: red; margin-top: 10px; }
+    /* Modal styling for full-screen image display */
+    #modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      overflow: auto;
+    }
+    #modal-content {
+      margin: 5% auto;
+      display: block;
+      width: 80%;
+      max-width: 80vw;
+      text-align: center;
+      position: relative;
+    }
+    #modal-img {
+      width: 100%;
+      height: auto;
+    }
+    #modal-close {
+      position: absolute;
+      top: -10px;
+      right: -10px;
+      background: #fff;
+      border-radius: 50%;
+      padding: 5px 10px;
+      font-size: 24px;
+      font-weight: bold;
+      color: #007acc;
+      cursor: pointer;
+    }
+    /* Responsive behavior */
+    @media (max-width: 800px) {
+      .container { flex-direction: column; }
+      .sidebar {
+         width: 100%;
+         border-right: none;
+         border-bottom: 1px solid #ddd;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>Probify</h1>
-  <a href="https://github.com/Illectrility/probify?tab=readme-ov-file#syntax">Syntax</a>
-  <p>Enter your dice code snippet below:</p>
-  <textarea id="dice-code" rows="10">
+  <!-- Loading overlay -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>Loading...</div>
+  </div>
+  
+  <div class="container">
+    <!-- Sidebar with collapsible syntax (hidden by default) -->
+    <div class="sidebar collapsed" id="sidebar">
+      <h2>Syntax</h2>
+      <div class="markdown-frame" id="syntax-content"></div>
+    </div>
+    <!-- Main content -->
+    <div class="main">
+      <button class="toggle-button" id="toggle-sidebar">Toggle Syntax</button>
+      <h1>Probify</h1>
+      <p>Enter your dice code snippet below:</p>
+      <textarea id="dice-code" rows="10">
 # Example dice code:
 result = 1d6 + 2d6
 if result < 7:
     result = 1d4
-  </textarea>
-  <br>
-  <div class="chart-size">
-    <label for="chart-width">Chart Width:</label>
-    <input type="number" id="chart-width" value="12" step="1.0">
-    <label for="chart-height">Chart Height:</label>
-    <input type="number" id="chart-height" value="8" step="1.0">
+      </textarea>
+      <div class="chart-size">
+        <label for="chart-width">Chart Width:</label>
+        <input type="number" id="chart-width" value="12" step="1">
+        <label for="chart-height">Chart Height:</label>
+        <input type="number" id="chart-height" value="8" step="1">
+      </div>
+      <button id="run-button">Generate Chart</button>
+      <button id="roll-button">Roll Dice</button>
+      <div id="output"></div>
+      <div id="roll-output"></div>
+      <h2>Resulting Distribution:</h2>
+      <!-- Chart container for the PNG image -->
+      <div id="chart-container">
+        <img id="plot" alt="Chart will appear here">
+      </div>
+    </div>
   </div>
-  <button id="run-button">Generate Chart</button>
-  <button id="roll-button">Roll Dice</button>
-  <div id="output"></div>
-  <div id="roll-output"></div>
-  <h2>Resulting Distribution:</h2>
-  <img id="plot" alt="Plot will appear here" />
+  
+  <!-- Modal for full-screen chart display -->
+  <div id="modal">
+    <div id="modal-content">
+      <span id="modal-close">&times;</span>
+      <img id="modal-img" src="" alt="Full-size Chart">
+    </div>
+  </div>
   
   <script>
+    // Configure marked with highlight.js for sidebar markdown.
+    marked.setOptions({
+      highlight: function(code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          return hljs.highlight(code, { language: lang }).value;
+        }
+        return hljs.highlightAuto(code).value;
+      }
+    });
+    
+    // Insert syntax markdown.
+    const syntaxMarkdown =
+      "- Dice rolls use `XdY` notation (e.g., `1d6`, `2d8`)\n" +
+      "- Use variables: `x = 1d6`\n" +
+      "- Resulting variable is always called `result`\n" +
+      "- Conditional rerolling:\n" +
+      "  ```python\n" +
+      "  x = 1d6\n" +
+      "  if x < 3:\n" +
+      "      x = 1d6\n" +
+      "  ```\n" +
+      "- Loops:\n" +
+      "  ```python\n" +
+      "  result = 0\n" +
+      "  for i in range(4):\n" +
+      "      result = result + 1d6\n" +
+      "  ```\n" +
+      "- Simple example:\n" +
+      "  ```python\n" +
+      "  result = 0\n" +
+      "  for i in range(6): # Repeat 6 times\n" +
+      "      result = result + 1d6 # Add 1d6 to result\n" +
+      "  ```\n" +
+      "- Simple example 2:\n" +
+      "  ```python\n" +
+      "  result = 6d6 # Add 6d6 to result\n" +
+      "  ```\n" +
+      "- More complex example:\n" +
+      "  ```python\n" +
+      "  result = 0\n" +
+      "  for i in range(4): # Repeat 4 times\n" +
+      "      x = 1d8 # x is a d8 roll\n" +
+      "      if x < 3: # If x is 1 or 2\n" +
+      "          x = 1d8 # Re-roll x as a d8\n" +
+      "      result = result + x # Add x to the result\n" +
+      "  ```\n" +
+      "- Complex example:\n" +
+      "  ```python\n" +
+      "  result = 0\n" +
+      "  for i in range(6): # Repeat 6 times\n" +
+      "      x = 1d6 # x is a d6 roll\n" +
+      "      if x < 3: # If x is 1 or 2\n" +
+      "          x = 1d6 # Re-roll x as a d6\n" +
+      "      result = result + x # Add x to the result\n" +
+      "      # All of this is repeated 6 times\n" +
+      "\n" +
+      "  y = 1d8 # y is a d8 roll\n" +
+      "  if y < 3: # If y is 1 or 2\n" +
+      "      y = 1d8 # Re-roll y as a d8\n" +
+      "  result = result + y # Add y to the result\n" +
+      "  # This isn't repeated\n" +
+      "\n" +
+      "  result = result + 1d4 # Add a d4 to the result\n" +
+      "  result = result + 15 # Add 15 to the result\n" +
+      "  ```";
+    document.getElementById("syntax-content").innerHTML = marked.parse(syntaxMarkdown);
+    hljs.highlightAll();
+    
+    // Toggle sidebar visibility.
+    document.getElementById("toggle-sidebar").onclick = () => {
+      document.getElementById("sidebar").classList.toggle("collapsed");
+    };
+    
     async function main() {
       const pyodide = await loadPyodide();
       await pyodide.loadPackage(['matplotlib', 'numpy']);
-      // Define our Python code with both chart generation and roll simulation.
+      // Hide the loading overlay once everything is ready.
+      document.getElementById("loading").style.display = "none";
+      
+      // Define Python code for chart generation and dice roll simulation.
       pyodide.runPython(`
-import ast
-import re
-import matplotlib
+import ast, re, matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import io
-import base64
-
+import matplotlib.pyplot as plt, io, base64
 def gf_add(dist1, dist2):
     new_dist = {}
     for a, pa in dist1.items():
         for b, pb in dist2.items():
-            new_dist[a + b] = new_dist.get(a + b, 0) + pa * pb
+            new_dist[a+b] = new_dist.get(a+b, 0) + pa*pb
     return new_dist
-
 def gf_repeat(dist, times):
-    result = {0: 1}
+    result = {0:1}
     for _ in range(times):
         result = gf_add(result, dist)
     return result
-
 def gf_dice(notation):
     m = re.fullmatch(r'(\\d+)d(\\d+)', notation)
-    if not m:
-        raise ValueError("Invalid dice notation: " + notation)
-    N = int(m.group(1))
-    M = int(m.group(2))
-    one_die = {i: 1 / M for i in range(1, M + 1)}
+    if not m: raise ValueError("Invalid dice notation: " + notation)
+    N, M = int(m.group(1)), int(m.group(2))
+    one_die = {i:1/M for i in range(1, M+1)}
     return GF(gf_repeat(one_die, N))
-
 def gf_conditional(gf_obj, condition, replacement):
     prob_replace = sum(prob for outcome, prob in gf_obj.dist.items() if condition(outcome))
-    new_dist = {outcome: prob for outcome, prob in gf_obj.dist.items() if not condition(outcome)}
+    new_dist = {outcome:prob for outcome, prob in gf_obj.dist.items() if not condition(outcome)}
     for outcome, prob in replacement.dist.items():
-        new_dist[outcome] = new_dist.get(outcome, 0) + prob_replace * prob
+        new_dist[outcome] = new_dist.get(outcome, 0) + prob_replace*prob
     return GF(new_dist)
-
 class GF:
-    def __init__(self, dist):
-        self.dist = dist
-
+    def __init__(self, dist): self.dist = dist
     def __add__(self, other):
-        if isinstance(other, GF):
-            return GF(gf_add(self.dist, other.dist))
-        elif isinstance(other, int):
-            return GF({k + other: v for k, v in self.dist.items()})
-        else:
-            return NotImplemented
-
-    def __radd__(self, other):
-        return self + other
-
+        if isinstance(other, GF): return GF(gf_add(self.dist, other.dist))
+        elif isinstance(other, int): return GF({k+other: v for k,v in self.dist.items()})
+        else: return NotImplemented
+    def __radd__(self, other): return self + other
     def __mul__(self, other):
-        if isinstance(other, int):
-            return GF(gf_repeat(self.dist, other))
+        if isinstance(other, int): return GF(gf_repeat(self.dist, other))
         return NotImplemented
-
-    def __rmul__(self, other):
-        return self * other
-
-    def __str__(self):
-        return str(self.dist)
+    def __rmul__(self, other): return self * other
+    def __str__(self): return str(self.dist)
     __repr__ = __str__
-
 class DiceTransformer(ast.NodeTransformer):
     def visit_If(self, node):
-        if (isinstance(node.test, ast.Compare) and
-            isinstance(node.test.left, ast.Name) and
-            len(node.test.ops) == 1 and
-            isinstance(node.test.ops[0], (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)) and
-            len(node.test.comparators) == 1 and
-            isinstance(node.test.comparators[0], ast.Constant)):
-            
+        if (isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name) and
+            len(node.test.ops)==1 and isinstance(node.test.ops[0], (ast.Lt,ast.LtE,ast.Gt,ast.GtE,ast.Eq,ast.NotEq)) and
+            len(node.test.comparators)==1 and isinstance(node.test.comparators[0], ast.Constant)):
             var_name = node.test.left.id
-            if (len(node.body) == 1 and isinstance(node.body[0], ast.Assign) and
-                len(node.body[0].targets) == 1 and isinstance(node.body[0].targets[0], ast.Name) and
-                node.body[0].targets[0].id == var_name):
-                
+            if (len(node.body)==1 and isinstance(node.body[0], ast.Assign) and
+                len(node.body[0].targets)==1 and isinstance(node.body[0].targets[0], ast.Name) and
+                node.body[0].targets[0].id==var_name):
                 assign_node = node.body[0]
                 new_compare = ast.Lambda(
-                    args=ast.arguments(
-                        posonlyargs=[],
-                        args=[ast.arg(arg="outcome")],
-                        vararg=None,
-                        kwonlyargs=[],
-                        kw_defaults=[],
-                        kwarg=None,
-                        defaults=[]
-                    ),
-                    body=ast.Compare(
-                        left=ast.Name(id="outcome", ctx=ast.Load()),
-                        ops=node.test.ops,
-                        comparators=node.test.comparators
-                    )
+                    args=ast.arguments(posonlyargs=[], args=[ast.arg(arg="outcome")],
+                                       vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+                    body=ast.Compare(left=ast.Name(id="outcome", ctx=ast.Load()),
+                                     ops=node.test.ops, comparators=node.test.comparators)
                 )
-                new_call = ast.Call(
-                    func=ast.Name(id="gf_conditional", ctx=ast.Load()),
-                    args=[ast.Name(id=var_name, ctx=ast.Load()), new_compare, assign_node.value],
-                    keywords=[]
-                )
+                new_call = ast.Call(func=ast.Name(id="gf_conditional", ctx=ast.Load()),
+                                    args=[ast.Name(id=var_name, ctx=ast.Load()), new_compare, assign_node.value],
+                                    keywords=[])
                 return ast.Assign(targets=[ast.Name(id=var_name, ctx=ast.Store())], value=new_call)
         return self.generic_visit(node)
-
     def visit_For(self, node):
-        if (isinstance(node.target, ast.Name) and
-            isinstance(node.iter, ast.Call) and
-            isinstance(node.iter.func, ast.Name) and
-            node.iter.func.id == "range" and
-            len(node.iter.args) == 1 and
-            isinstance(node.iter.args[0], ast.Constant)):
-            
+        if (isinstance(node.target, ast.Name) and isinstance(node.iter, ast.Call) and
+            isinstance(node.iter.func, ast.Name) and node.iter.func.id=="range" and
+            len(node.iter.args)==1 and isinstance(node.iter.args[0], ast.Constant)):
             loop_count = node.iter.args[0].value
-
-            if (len(node.body) == 1 and isinstance(node.body[0], ast.AugAssign) and
-                isinstance(node.body[0].op, ast.Add) and
-                isinstance(node.body[0].target, ast.Name) and
+            if (len(node.body)==1 and isinstance(node.body[0], ast.AugAssign) and
+                isinstance(node.body[0].op, ast.Add) and isinstance(node.body[0].target, ast.Name) and
                 isinstance(node.body[0].value, ast.Call)):
-                
                 augassign = node.body[0]
                 new_call = ast.BinOp(left=augassign.value, op=ast.Mult(), right=ast.Constant(value=loop_count))
                 return ast.Assign(
                     targets=[ast.Name(id=augassign.target.id, ctx=ast.Store())],
-                    value=ast.BinOp(
-                        left=ast.Name(id=augassign.target.id, ctx=ast.Load()),
-                        op=ast.Add(),
-                        right=new_call
-                    )
-                )
+                    value=ast.BinOp(left=ast.Name(id=augassign.target.id, ctx=ast.Load()),
+                                    op=ast.Add(), right=new_call))
         return self.generic_visit(node)
-
 def preprocess_code(code):
+    import re
     return re.sub(r'(\\b\\d+d\\d+\\b)', r'gf_dice("\\1")', code)
-
 def run_dice_code(user_code, width=8, height=6):
-    DECIMAL_POINTS = 1
-    MIN_LABEL_PERCENT = 1.0
-
+    DECIMAL_POINTS=1; MIN_LABEL_PERCENT=1.0
     processed_code = preprocess_code(user_code)
+    import ast
     tree = ast.parse(processed_code)
     tree = DiceTransformer().visit(tree)
     ast.fix_missing_locations(tree)
-
     env = {"gf_dice": gf_dice, "gf_conditional": gf_conditional, "GF": GF}
     exec(compile(tree, "<ast>", "exec"), env)
-
     result = env["result"]
     outcomes, probabilities = zip(*sorted(result.dist.items()))
-
     plt.figure(figsize=(width, height))
-    bars = plt.bar(outcomes, [p * 100 for p in probabilities],
+    bars = plt.bar(outcomes, [p*100 for p in probabilities],
                    color="skyblue", edgecolor="black")
     for bar, p in zip(bars, probabilities):
-        percent_value = p * 100
-        if percent_value >= MIN_LABEL_PERCENT:
+        percent_value = p*100
+        if percent_value>=MIN_LABEL_PERCENT:
             bar_height = bar.get_height()
-            plt.text(
-                bar.get_x() + bar.get_width() / 2.,
-                bar_height,
-                f'{percent_value:.{DECIMAL_POINTS}f}%',
-                ha='center',
-                va='bottom'
-            )
-    plt.xlabel("Outcome")
-    plt.ylabel("Probability (%)")
-    plt.title("Distribution for result")
-    plt.xticks(outcomes)
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    img_bytes = buf.getvalue()
+            plt.text(bar.get_x()+bar.get_width()/2., bar_height,
+                     f'{percent_value:.{DECIMAL_POINTS}f}%', ha='center', va='bottom')
+    plt.xlabel("Outcome"); plt.ylabel("Probability (%)")
+    plt.title("Distribution for result"); plt.xticks(outcomes)
+    import io; buf = io.BytesIO(); plt.savefig(buf, format='png'); buf.seek(0)
+    img_bytes = buf.getvalue(); buf.close(); import base64
     data_uri = "data:image/png;base64," + base64.b64encode(img_bytes).decode("utf-8")
-    plt.close()
-    return data_uri
-
+    plt.close(); return data_uri
 def run_dice_roll(user_code):
     import random
     processed_code = preprocess_code(user_code)
-    tree = ast.parse(processed_code)
-    tree = DiceTransformer().visit(tree)
-    ast.fix_missing_locations(tree)
+    import ast; tree = ast.parse(processed_code)
+    tree = DiceTransformer().visit(tree); ast.fix_missing_locations(tree)
     env = {"gf_dice": gf_dice, "gf_conditional": gf_conditional, "GF": GF, "random": random}
     exec(compile(tree, "<ast>", "exec"), env)
-    result = env["result"]
-    outcomes, probabilities = zip(*sorted(result.dist.items()))
-    outcome = random.choices(population=list(outcomes), weights=list(probabilities))[0]
-    return outcome
+    result = env["result"]; outcomes, probabilities = zip(*sorted(result.dist.items()))
+    return random.choices(population=list(outcomes), weights=list(probabilities))[0]
       `);
-      
       document.getElementById("run-button").onclick = async () => {
-        const userCode = document.getElementById("dice-code").value;
-        const width = parseFloat(document.getElementById("chart-width").value);
-        const height = parseFloat(document.getElementById("chart-height").value);
-        try {
-          const pythonCommand = `run_dice_code(${JSON.stringify(userCode)}, ${width}, ${height})`;
-          const dataUri = await pyodide.runPythonAsync(pythonCommand);
-          document.getElementById("plot").src = dataUri;
-          document.getElementById("output").textContent = "";
-        } catch (err) {
-          document.getElementById("output").textContent = err;
-        }
+         const userCode = document.getElementById("dice-code").value;
+         const width = parseFloat(document.getElementById("chart-width").value);
+         const height = parseFloat(document.getElementById("chart-height").value);
+         try {
+            const pythonCommand = `run_dice_code(${JSON.stringify(userCode)}, ${width}, ${height})`;
+            const dataUri = await pyodide.runPythonAsync(pythonCommand);
+            document.getElementById("plot").src = dataUri;
+            document.getElementById("output").textContent = "";
+         } catch (err) {
+            document.getElementById("output").textContent = err;
+         }
       };
-
       document.getElementById("roll-button").onclick = async () => {
-        const userCode = document.getElementById("dice-code").value;
-        try {
-          const outcome = await pyodide.runPythonAsync(`run_dice_roll(${JSON.stringify(userCode)})`);
-          document.getElementById("roll-output").textContent = "Roll outcome: " + outcome;
-        } catch (err) {
-          document.getElementById("roll-output").textContent = err;
-        }
+         const userCode = document.getElementById("dice-code").value;
+         try {
+            const outcome = await pyodide.runPythonAsync(`run_dice_roll(${JSON.stringify(userCode)})`);
+            document.getElementById("roll-output").textContent = "Roll outcome: " + outcome;
+         } catch (err) {
+            document.getElementById("roll-output").textContent = err;
+         }
       };
     }
     main();
+    
+    // Modal functionality: clicking the chart image opens the modal with a larger image.
+    document.getElementById("plot").onclick = () => {
+       const modal = document.getElementById("modal");
+       const modalImg = document.getElementById("modal-img");
+       modalImg.src = document.getElementById("plot").src;
+       modal.style.display = "block";
+    };
+    // Close modal when clicking the close button.
+    document.getElementById("modal-close").onclick = () => {
+       document.getElementById("modal").style.display = "none";
+    };
+    // Close modal when clicking outside the modal content.
+    window.onclick = (event) => {
+       const modal = document.getElementById("modal");
+       if (event.target == modal) {
+          modal.style.display = "none";
+       }
+    };
   </script>
 </body>
 </html>
