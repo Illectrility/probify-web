@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Probify Web</title>
+  <title>Probify - D&D dice sequence probability calculator</title>
+  <meta name="description" content="Code D&D dice sequences and calculate its probability distribution. Perfect for balancing or just for fun.">
   <!-- Pyodide for running Python code in the browser -->
   <script src="https://cdn.jsdelivr.net/pyodide/v0.23.3/full/pyodide.js"></script>
   <!-- Marked and Highlight.js for rendering the syntax sidebar -->
@@ -270,7 +271,7 @@ if result < 7:
       }
     });
     
-    // Insert the provided syntax as markdown.
+    // Insert syntax markdown.
     const syntaxMarkdown =
       "- Dice rolls use `XdY` notation (e.g., `1d6`, `2d8`)\n" +
       "- Use variables: `x = 1d6`\n" +
@@ -414,12 +415,12 @@ class GF:
 class DiceTransformer(ast.NodeTransformer):
     def visit_If(self, node):
         if (isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name) and
-            len(node.test.ops) == 1 and isinstance(node.test.ops[0], (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)) and
-            len(node.test.comparators) == 1 and isinstance(node.test.comparators[0], ast.Constant)):
+            len(node.test.ops)==1 and isinstance(node.test.ops[0], (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)) and
+            len(node.test.comparators)==1 and isinstance(node.test.comparators[0], ast.Constant)):
             var_name = node.test.left.id
-            if (len(node.body) == 1 and isinstance(node.body[0], ast.Assign) and
-                len(node.body[0].targets) == 1 and isinstance(node.body[0].targets[0], ast.Name) and
-                node.body[0].targets[0].id == var_name):
+            if (len(node.body)==1 and isinstance(node.body[0], ast.Assign) and
+                len(node.body[0].targets)==1 and isinstance(node.body[0].targets[0], ast.Name) and
+                node.body[0].targets[0].id==var_name):
                 assign_node = node.body[0]
                 new_compare = ast.Lambda(
                     args=ast.arguments(posonlyargs=[], args=[ast.arg(arg="outcome")],
@@ -434,10 +435,10 @@ class DiceTransformer(ast.NodeTransformer):
         return self.generic_visit(node)
     def visit_For(self, node):
         if (isinstance(node.target, ast.Name) and isinstance(node.iter, ast.Call) and
-            isinstance(node.iter.func, ast.Name) and node.iter.func.id == "range" and
-            len(node.iter.args) == 1 and isinstance(node.iter.args[0], ast.Constant)):
+            isinstance(node.iter.func, ast.Name) and node.iter.func.id=="range" and
+            len(node.iter.args)==1 and isinstance(node.iter.args[0], ast.Constant)):
             loop_count = node.iter.args[0].value
-            if (len(node.body) == 1 and isinstance(node.body[0], ast.AugAssign) and
+            if (len(node.body)==1 and isinstance(node.body[0], ast.AugAssign) and
                 isinstance(node.body[0].op, ast.Add) and isinstance(node.body[0].target, ast.Name) and
                 isinstance(node.body[0].value, ast.Call)):
                 augassign = node.body[0]
@@ -451,7 +452,7 @@ def preprocess_code(code):
     import re
     return re.sub(r'(\\b\\d+d\\d+\\b)', r'gf_dice("\\1")', code)
 def run_dice_code(user_code, width=8, height=6, conf_enabled=False, conf_pct=90):
-    DECIMAL_POINTS = 1; MIN_LABEL_PERCENT = 1.0
+    DECIMAL_POINTS=1; MIN_LABEL_PERCENT=1.0
     processed_code = preprocess_code(user_code)
     import ast
     tree = ast.parse(processed_code)
@@ -481,7 +482,7 @@ def run_dice_code(user_code, width=8, height=6, conf_enabled=False, conf_pct=90)
         percent_value = p*100
         if percent_value >= MIN_LABEL_PERCENT:
             bar_height = bar.get_height()
-            plt.text(bar.get_x() + bar.get_width()/2., bar_height,
+            plt.text(bar.get_x()+bar.get_width()/2., bar_height,
                      f'{percent_value:.{DECIMAL_POINTS}f}%', ha='center', va='bottom')
     plt.xlabel("Outcome"); plt.ylabel("Probability (%)")
     plt.title("Distribution for result"); plt.xticks(outcomes)
