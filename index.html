@@ -35,6 +35,7 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    
     /* Reset and general styles */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -155,7 +156,7 @@
       padding: 10px;
     }
     #output, #roll-output { color: red; margin-top: 10px; }
-    /* Modal for full-screen chart display */
+    /* Modal for full-screen image display */
     #modal {
       display: none;
       position: fixed;
@@ -192,11 +193,7 @@
     /* Responsive behavior */
     @media (max-width: 800px) {
       .container { flex-direction: column; }
-      .sidebar {
-         width: 100%;
-         border-right: none;
-         border-bottom: 1px solid #ddd;
-      }
+      .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #ddd; }
     }
   </style>
 </head>
@@ -273,7 +270,7 @@ if result < 7:
       }
     });
     
-    // Insert syntax markdown.
+    // Insert the provided syntax as markdown.
     const syntaxMarkdown =
       "- Dice rolls use `XdY` notation (e.g., `1d6`, `2d8`)\n" +
       "- Use variables: `x = 1d6`\n" +
@@ -320,7 +317,7 @@ if result < 7:
       "      # All of this is repeated 6 times\n" +
       "\n" +
       "  y = 1d8 # y is a d8 roll\n" +
-      "  if y < 3: # If y is 1 or 2\n" +
+      "  if y < 3: # If y is a d8 roll\n" +
       "      y = 1d8 # Re-roll y as a d8\n" +
       "  result = result + y # Add y to the result\n" +
       "  # This isn't repeated\n" +
@@ -374,7 +371,7 @@ def gf_repeat(dist, times):
     return result
 def gf_dice(notation):
     m = re.fullmatch(r'(\\d+)d(\\d+)', notation)
-    if not m: 
+    if not m:
         raise ValueError("Invalid dice notation: " + notation)
     N, M = int(m.group(1)), int(m.group(2))
     one_die = {i:1/M for i in range(1, M+1)}
@@ -386,27 +383,43 @@ def gf_conditional(gf_obj, condition, replacement):
         new_dist[outcome] = new_dist.get(outcome, 0) + prob_replace*prob
     return GF(new_dist)
 class GF:
-    def __init__(self, dist): self.dist = dist
+    def __init__(self, dist):
+        self.dist = dist
     def __add__(self, other):
-        if isinstance(other, GF): return GF(gf_add(self.dist, other.dist))
-        elif isinstance(other, int): return GF({k+other: v for k,v in self.dist.items()})
-        else: return NotImplemented
-    def __radd__(self, other): return self + other
-    def __mul__(self, other):
-        if isinstance(other, int): return GF(gf_repeat(self.dist, other))
+        if isinstance(other, GF):
+            return GF(gf_add(self.dist, other.dist))
+        elif isinstance(other, int):
+            return GF({k + other: v for k, v in self.dist.items()})
+        else:
+            return NotImplemented
+    def __radd__(self, other):
+        return self + other
+    def __sub__(self, other):
+        if isinstance(other, int):
+            return GF({k - other: v for k, v in self.dist.items()})
         return NotImplemented
-    def __rmul__(self, other): return self * other
-    def __str__(self): return str(self.dist)
+    def __rsub__(self, other):
+        if isinstance(other, int):
+            return GF({other - k: v for k, v in self.dist.items()})
+        return NotImplemented
+    def __mul__(self, other):
+        if isinstance(other, int):
+            return GF(gf_repeat(self.dist, other))
+        return NotImplemented
+    def __rmul__(self, other):
+        return self * other
+    def __str__(self):
+        return str(self.dist)
     __repr__ = __str__
 class DiceTransformer(ast.NodeTransformer):
     def visit_If(self, node):
         if (isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name) and
-            len(node.test.ops)==1 and isinstance(node.test.ops[0], (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)) and
-            len(node.test.comparators)==1 and isinstance(node.test.comparators[0], ast.Constant)):
+            len(node.test.ops) == 1 and isinstance(node.test.ops[0], (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)) and
+            len(node.test.comparators) == 1 and isinstance(node.test.comparators[0], ast.Constant)):
             var_name = node.test.left.id
-            if (len(node.body)==1 and isinstance(node.body[0], ast.Assign) and
-                len(node.body[0].targets)==1 and isinstance(node.body[0].targets[0], ast.Name) and
-                node.body[0].targets[0].id==var_name):
+            if (len(node.body) == 1 and isinstance(node.body[0], ast.Assign) and
+                len(node.body[0].targets) == 1 and isinstance(node.body[0].targets[0], ast.Name) and
+                node.body[0].targets[0].id == var_name):
                 assign_node = node.body[0]
                 new_compare = ast.Lambda(
                     args=ast.arguments(posonlyargs=[], args=[ast.arg(arg="outcome")],
@@ -421,10 +434,10 @@ class DiceTransformer(ast.NodeTransformer):
         return self.generic_visit(node)
     def visit_For(self, node):
         if (isinstance(node.target, ast.Name) and isinstance(node.iter, ast.Call) and
-            isinstance(node.iter.func, ast.Name) and node.iter.func.id=="range" and
-            len(node.iter.args)==1 and isinstance(node.iter.args[0], ast.Constant)):
+            isinstance(node.iter.func, ast.Name) and node.iter.func.id == "range" and
+            len(node.iter.args) == 1 and isinstance(node.iter.args[0], ast.Constant)):
             loop_count = node.iter.args[0].value
-            if (len(node.body)==1 and isinstance(node.body[0], ast.AugAssign) and
+            if (len(node.body) == 1 and isinstance(node.body[0], ast.AugAssign) and
                 isinstance(node.body[0].op, ast.Add) and isinstance(node.body[0].target, ast.Name) and
                 isinstance(node.body[0].value, ast.Call)):
                 augassign = node.body[0]
@@ -438,7 +451,7 @@ def preprocess_code(code):
     import re
     return re.sub(r'(\\b\\d+d\\d+\\b)', r'gf_dice("\\1")', code)
 def run_dice_code(user_code, width=8, height=6, conf_enabled=False, conf_pct=90):
-    DECIMAL_POINTS=1; MIN_LABEL_PERCENT=1.0
+    DECIMAL_POINTS = 1; MIN_LABEL_PERCENT = 1.0
     processed_code = preprocess_code(user_code)
     import ast
     tree = ast.parse(processed_code)
@@ -448,7 +461,6 @@ def run_dice_code(user_code, width=8, height=6, conf_enabled=False, conf_pct=90)
     exec(compile(tree, "<ast>", "exec"), env)
     result = env["result"]
     outcomes, probabilities = zip(*sorted(result.dist.items()))
-    # If confidence bounds are enabled, compute lower and upper bounds.
     lower_bound = None
     upper_bound = None
     if conf_enabled:
@@ -462,19 +474,17 @@ def run_dice_code(user_code, width=8, height=6, conf_enabled=False, conf_pct=90)
             if upper_bound is None and cumulative >= upper_quantile:
                 upper_bound = o
                 break
-    # Plot the distribution.
     plt.figure(figsize=(width, height))
     bars = plt.bar(outcomes, [p*100 for p in probabilities],
                    color="skyblue", edgecolor="black")
     for bar, p in zip(bars, probabilities):
         percent_value = p*100
-        if percent_value>=MIN_LABEL_PERCENT:
+        if percent_value >= MIN_LABEL_PERCENT:
             bar_height = bar.get_height()
-            plt.text(bar.get_x()+bar.get_width()/2., bar_height,
+            plt.text(bar.get_x() + bar.get_width()/2., bar_height,
                      f'{percent_value:.{DECIMAL_POINTS}f}%', ha='center', va='bottom')
     plt.xlabel("Outcome"); plt.ylabel("Probability (%)")
     plt.title("Distribution for result"); plt.xticks(outcomes)
-    # If confidence is enabled, draw vertical dashed lines.
     if conf_enabled and lower_bound is not None and upper_bound is not None:
         plt.axvline(lower_bound, color='red', linestyle='--', label=f'Lower {conf_pct}% bound')
         plt.axvline(upper_bound, color='red', linestyle='--', label=f'Upper {conf_pct}% bound')
@@ -493,9 +503,7 @@ def run_summary(user_code, conf_enabled, conf_pct):
     exec(compile(tree, "<ast>", "exec"), env)
     result = env["result"]
     outcomes, probabilities = zip(*sorted(result.dist.items()))
-    # Compute weighted mean.
     mean = sum(o * p for o, p in zip(outcomes, probabilities))
-    # Compute weighted median.
     cumulative = 0
     weighted_median = outcomes[-1]
     for o, p in zip(outcomes, probabilities):
@@ -503,10 +511,8 @@ def run_summary(user_code, conf_enabled, conf_pct):
         if cumulative >= 0.5:
             weighted_median = o
             break
-    # Compute variance and std.
     variance = sum(((o - mean)**2)*p for o, p in zip(outcomes, probabilities))
     std = variance**0.5
-    # Confidence bounds.
     lower_bound = None
     upper_bound = None
     if conf_enabled:
@@ -520,7 +526,6 @@ def run_summary(user_code, conf_enabled, conf_pct):
             if upper_bound is None and cumulative >= upper_quantile:
                 upper_bound = o
                 break
-    # Minimum and maximum possible values.
     min_val = min(outcomes)
     max_val = max(outcomes)
     html = "<table border='1' cellspacing='0' cellpadding='5' style='margin:auto;'>";
@@ -546,7 +551,7 @@ def run_dice_roll(user_code):
     return random.choices(population=list(outcomes), weights=list(probabilities))[0]
       `);
       
-      // Convert JavaScript boolean to Python boolean.
+      // Convert JavaScript boolean to Python boolean string.
       document.getElementById("run-button").onclick = async () => {
          const userCode = document.getElementById("dice-code").value;
          const width = parseFloat(document.getElementById("chart-width").value);
@@ -579,7 +584,7 @@ def run_dice_roll(user_code):
     }
     main();
     
-    // Modal functionality: clicking the chart image opens the modal with a larger image.
+    // Modal functionality: clicking the chart image opens the modal with an enlarged image.
     document.getElementById("plot").onclick = () => {
        const modal = document.getElementById("modal");
        const modalImg = document.getElementById("modal-img");
