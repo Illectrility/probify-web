@@ -4,20 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Probify - D&D dice sequence probability calculator</title>
-  <meta name="description" content="Code D&D dice sequences and calculate its probability distribution. Perfect for balancing or just for fun.">
+  <meta name="description" content="Code D&D dice sequences and calculate their probability distribution. Perfect for balancing or just for fun.">
+  <!-- CodeMirror CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
   <!-- Pyodide for running Python code in the browser -->
   <script src="https://cdn.jsdelivr.net/pyodide/v0.23.3/full/pyodide.js"></script>
   <!-- Marked and Highlight.js for rendering the syntax sidebar -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/default.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+  <!-- CodeMirror JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/python/python.min.js"></script>
   <style>
     /* Loading overlay styles */
     #loading {
       position: fixed;
       top: 0; left: 0;
       width: 100%; height: 100%;
-      background: rgba(255, 255, 255, 0.9);
+      background: rgba(255,255,255,0.9);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -37,7 +42,7 @@
       100% { transform: rotate(360deg); }
     }
     
-    /* Reset and general styles */
+    /* General and layout styles */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: Arial, sans-serif;
@@ -86,16 +91,16 @@
       margin-bottom: 20px;
     }
     .markdown-frame pre { overflow-x: auto; }
-    /* Fixed width text area; only vertical resizing allowed */
-    textarea {
-      width: 100%;
-      max-width: 100%;
-      font-family: Consolas, Monaco, monospace;
-      padding: 10px;
+    /* CodeMirror editor styling */
+    .CodeMirror {
+      height: auto;
       border: 1px solid #ccc;
-      border-radius: 4px;
+      font-family: Consolas, Monaco, monospace;
       margin-bottom: 10px;
-      resize: vertical;
+    }
+    /* Ensure the CodeMirror editor fills its container */
+    #dice-code-container {
+      width: 100%;
     }
     .chart-size { margin: 10px 0; }
     .chart-size label { margin-right: 10px; }
@@ -164,7 +169,7 @@
       z-index: 1000;
       left: 0; top: 0;
       width: 100%; height: 100%;
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(0,0,0,0.8);
       overflow: auto;
     }
     #modal-content {
@@ -216,12 +221,14 @@
       <button class="toggle-button" id="toggle-sidebar">Toggle Syntax</button>
       <h1>Probify</h1>
       <p>Enter your dice code snippet below:</p>
-      <textarea id="dice-code" rows="10">
+      <div id="dice-code-container">
+        <textarea id="dice-code" rows="10">
 # Example dice code:
 result = 1d6 + 2d6
 if result < 7:
     result = 1d4
-      </textarea>
+        </textarea>
+      </div>
       <div class="chart-size">
         <label for="chart-width">Chart Width:</label>
         <input type="number" id="chart-width" value="12" step="1">
@@ -261,6 +268,28 @@ if result < 7:
   </div>
   
   <script>
+    // Declare a global variable for CodeMirror editor.
+    var editor;
+    
+    // Initialize CodeMirror for syntax highlighting and tab indentation.
+    window.addEventListener("load", () => {
+      editor = CodeMirror.fromTextArea(document.getElementById("dice-code"), {
+        mode: "python",
+        lineNumbers: true,
+        indentUnit: 4,
+        indentWithTabs: true,
+        theme: "default",
+        lineWrapping: true,
+        viewportMargin: Infinity  // Allows the editor to expand to fit content
+      });
+      // Bind Ctrl+Enter to trigger "Generate Output" while preserving Enter for new lines.
+      editor.setOption("extraKeys", {
+        "Ctrl-Enter": function(cm) {
+          document.getElementById("run-button").click();
+        }
+      });
+    });
+    
     // Configure marked with highlight.js for sidebar markdown.
     marked.setOptions({
       highlight: function(code, lang) {
@@ -318,7 +347,7 @@ if result < 7:
       "      # All of this is repeated 6 times\n" +
       "\n" +
       "  y = 1d8 # y is a d8 roll\n" +
-      "  if y < 3: # If y is a d8 roll\n" +
+      "  if y < 3: # If y is 1 or 2\n" +
       "      y = 1d8 # Re-roll y as a d8\n" +
       "  result = result + y # Add y to the result\n" +
       "  # This isn't repeated\n" +
@@ -375,7 +404,7 @@ def gf_dice(notation):
     if not m:
         raise ValueError("Invalid dice notation: " + notation)
     N, M = int(m.group(1)), int(m.group(2))
-    one_die = {i:1/M for i in range(1, M+1)}
+    one_die = {i: 1/M for i in range(1, M+1)}
     return GF(gf_repeat(one_die, N))
 def gf_conditional(gf_obj, condition, replacement):
     prob_replace = sum(prob for outcome, prob in gf_obj.dist.items() if condition(outcome))
@@ -452,7 +481,7 @@ def preprocess_code(code):
     import re
     return re.sub(r'(\\b\\d+d\\d+\\b)', r'gf_dice("\\1")', code)
 def run_dice_code(user_code, width=8, height=6, conf_enabled=False, conf_pct=90):
-    DECIMAL_POINTS=1; MIN_LABEL_PERCENT=1.0
+    DECIMAL_POINTS = 1; MIN_LABEL_PERCENT = 1.0
     processed_code = preprocess_code(user_code)
     import ast
     tree = ast.parse(processed_code)
@@ -552,9 +581,9 @@ def run_dice_roll(user_code):
     return random.choices(population=list(outcomes), weights=list(probabilities))[0]
       `);
       
-      // Convert JavaScript boolean to Python boolean string.
+      // Convert JS boolean to Python boolean string.
       document.getElementById("run-button").onclick = async () => {
-         const userCode = document.getElementById("dice-code").value;
+         const userCode = editor.getValue();
          const width = parseFloat(document.getElementById("chart-width").value);
          const height = parseFloat(document.getElementById("chart-height").value);
          const confEnabled = document.getElementById("conf-check").checked;
@@ -574,7 +603,7 @@ def run_dice_roll(user_code):
       };
       
       document.getElementById("roll-button").onclick = async () => {
-         const userCode = document.getElementById("dice-code").value;
+         const userCode = editor.getValue();
          try {
             const outcome = await pyodide.runPythonAsync(`run_dice_roll(${JSON.stringify(userCode)})`);
             document.getElementById("roll-output").textContent = "Roll outcome: " + outcome;
@@ -596,7 +625,7 @@ def run_dice_roll(user_code):
     document.getElementById("modal-close").onclick = () => {
        document.getElementById("modal").style.display = "none";
     };
-    // Close modal when clicking outside the modal content.
+    // Close modal when clicking outside modal content.
     window.onclick = (event) => {
        const modal = document.getElementById("modal");
        if (event.target == modal) {
@@ -606,11 +635,11 @@ def run_dice_roll(user_code):
   </script>
 <footer style="text-align: center; margin-top: 20px; padding: 10px;">
   <a href="https://github.com/illectrility/probify-web" target="_blank" style="color: #007acc; text-decoration: none; margin: 0 10px;">
-    Web Page Repo
+    HTML Code
   </a>
   |
   <a href="https://github.com/illectrility/probify" target="_blank" style="color: #007acc; text-decoration: none; margin: 0 10px;">
-    Calculator Repo
+    Python Code
   </a>
 </footer>
 </body>
