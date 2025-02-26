@@ -224,9 +224,12 @@
       <div id="dice-code-container">
         <textarea id="dice-code" rows="10">
 # Example dice code:
-result = 1d6 + 2d6
-if result < 7:
-    result = 1d4
+result = 0
+for i in range(4): # Repeat 4 times
+    x = 1d6
+    if x < 3:
+          x = 1d6 # Re-roll if result is below 3
+    result = result + x # Add to the result
         </textarea>
       </div>
       <div class="chart-size">
